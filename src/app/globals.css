@@ -1,26 +1,172 @@
 @import "tailwindcss";
 
-:root {
+/* ── テーマ: ネイビー（デフォルト） ── */
+:root,
+[data-theme="navy"] {
+  --background: #0f1e3d;
+  --foreground: #dce8f8;
+  --muted: #7a90bc;
+  --card: #16274f;
+  --border: #2a3f6b;
+  --accent: #60a5fa;
+  color-scheme: dark;
+}
+
+[data-theme="navy"] .bg-white {
+  background-color: var(--card);
+}
+[data-theme="navy"] .bg-slate-50 {
+  background-color: #1a2e58;
+}
+[data-theme="navy"] .bg-slate-100 {
+  background-color: #1e3262;
+}
+[data-theme="navy"] .bg-slate-200 {
+  background-color: #243870;
+}
+[data-theme="navy"] .text-slate-900 {
+  color: var(--foreground);
+}
+[data-theme="navy"] .text-slate-800 {
+  color: #ccdaf5;
+}
+[data-theme="navy"] .text-slate-700 {
+  color: #aec4e8;
+}
+[data-theme="navy"] .text-slate-600 {
+  color: #8aa8d4;
+}
+[data-theme="navy"] .border-slate-200 {
+  border-color: var(--border);
+}
+[data-theme="navy"] .bg-indigo-50 {
+  background-color: rgba(96, 165, 250, 0.15);
+}
+[data-theme="navy"] .text-indigo-700 {
+  color: #93c5fd;
+}
+[data-theme="navy"] .hover\:bg-slate-50:hover {
+  background-color: #1a2e58;
+}
+[data-theme="navy"] input,
+[data-theme="navy"] textarea,
+[data-theme="navy"] select {
+  background-color: #1a2e58;
+  color: var(--foreground);
+  border-color: var(--border);
+}
+[data-theme="navy"] input::placeholder,
+[data-theme="navy"] textarea::placeholder {
+  color: var(--muted);
+}
+
+/* ── テーマ: 白 ── */
+[data-theme="white"] {
   --background: #ffffff;
-  --foreground: #171717;
+  --foreground: #111827;
+  --muted: #6b7280;
+  --card: #f3f4f6;
+  --border: #e5e7eb;
+  --accent: #4f46e5;
+}
+
+[data-theme="white"] .bg-white {
+  background-color: var(--card);
+}
+
+/* ── テーマ: 黒 ── */
+[data-theme="black"] {
+  --background: #0d0d0d;
+  --foreground: #f0f0f0;
+  --muted: #9ca3af;
+  --card: #1a1a1a;
+  --border: #2e2e2e;
+  --accent: #818cf8;
+  color-scheme: dark;
+}
+
+[data-theme="black"] .bg-white {
+  background-color: var(--card);
+}
+[data-theme="black"] .bg-slate-50 {
+  background-color: #1e1e1e;
+}
+[data-theme="black"] .bg-slate-100 {
+  background-color: #282828;
+}
+[data-theme="black"] .bg-slate-200 {
+  background-color: #333333;
+}
+[data-theme="black"] .text-slate-900 {
+  color: var(--foreground);
+}
+[data-theme="black"] .text-slate-800 {
+  color: #e5e5e5;
+}
+[data-theme="black"] .text-slate-700 {
+  color: #d1d5db;
+}
+[data-theme="black"] .text-slate-600 {
+  color: #a0a0a0;
+}
+[data-theme="black"] .border-slate-200 {
+  border-color: var(--border);
+}
+[data-theme="black"] .bg-indigo-50 {
+  background-color: rgba(79, 70, 229, 0.18);
+}
+[data-theme="black"] .text-indigo-700 {
+  color: #a5b4fc;
+}
+[data-theme="black"] .hover\:bg-slate-50:hover {
+  background-color: #242424;
+}
+[data-theme="black"] input,
+[data-theme="black"] textarea,
+[data-theme="black"] select {
+  background-color: #242424;
+  color: var(--foreground);
+  border-color: var(--border);
+}
+[data-theme="black"] input::placeholder,
+[data-theme="black"] textarea::placeholder {
+  color: var(--muted);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-muted: var(--muted);
+  --color-card: var(--card);
+  --color-border: var(--border);
+  --color-accent: var(--accent);
+  --font-sans: var(--font-noto-sans-jp), -apple-system, BlinkMacSystemFont,
+    "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
+html,
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* スクロールバー軽量化 */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 9999px;
+}
+
+/* モーダル中は週間グリッドを描画しない（背面のボックスが透けて見えるのを防ぐ） */
+body.timecraft-modal-open [data-week-planner] {
+  visibility: hidden;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
 }
