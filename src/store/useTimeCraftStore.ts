@@ -21,12 +21,10 @@ import {
 } from "@/lib/repeatPlacements";
 import { needsRepeatReconcile } from "@/lib/repeatReconcile";
 import { newId } from "@/lib/id";
-import { addWeeks } from "date-fns";
 import { toISODate, weekStart } from "@/lib/date";
 import {
   collectWeekScheduleBoxes,
   duplicateWeekBoxPayload,
-  shiftWeekPlannerNotes,
   shouldSkipWeekDuplicate,
 } from "@/lib/duplicateWeek";
 import { snapBoxMoveTimes } from "@/lib/plannerSlots";
@@ -235,6 +233,13 @@ export interface TimeCraftState {
   }) => void;
 
   resetAll: () => void;
+
+  /** 操作履歴を1つ戻す（Ctrl+Z 相当） */
+  undo: () => void;
+  /** 操作履歴を1つ進む（Ctrl+Y 相当） */
+  redo: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
 }
 
 const nowIso = (): string => new Date().toISOString();
@@ -251,7 +256,19 @@ const timeDiffMinutes = (start: string, end: string): number => {
 
 export const useTimeCraftStore = create<TimeCraftState>()(
   persist(
-    (set, get) => ({
+    (set, get) => {
+      // Undo/redo history (closure-scoped, not persisted)
+      const _past: { boxes: Box[] }[] = [];
+      const _future: { boxes: Box[] }[] = [];
+      const HISTORY_LIMIT = 50;
+
+      function record() {
+        _past.push({ boxes: [...get().boxes] });
+        if (_past.length > HISTORY_LIMIT) _past.shift();
+        _future.length = 0;
+      }
+
+      return {
       theme: "navy" as Theme,
       setTheme: (t: Theme) => set({ theme: t }),
 
@@ -392,10 +409,6 @@ export const useTimeCraftStore = create<TimeCraftState>()(
       },
 
       duplicateWeekToNext: (anchorDate) => {
-        const start = weekStart(anchorDate);
-        const nextStart = addWeeks(start, 1);
-        const curKey = toISODate(start);
-        const nextKey = toISODate(nextStart);
         const now = nowIso();
         const allBoxes = get().boxes;
 
@@ -410,24 +423,11 @@ export const useTimeCraftStore = create<TimeCraftState>()(
             updatedAt: now,
           }));
 
-        const curPlanner = get().getWeekPlanner(anchorDate);
-        const nextPlanner = normalizeWeekPlanner(
-          {
-            ...shiftWeekPlannerNotes(
-              { ...curPlanner, weekStart: curKey },
-              7,
-            ),
-            weekStart: nextKey,
-          },
-          nextKey,
-        );
-
+        record();
         set({
           boxes: [...get().boxes, ...newBoxes],
-          weekPlannerByWeek: {
-            ...get().weekPlannerByWeek,
-            [nextKey]: nextPlanner,
-          },
+          canUndo: true,
+          canRedo: false,
         });
         return newBoxes.length;
       },
@@ -440,7 +440,8 @@ export const useTimeCraftStore = create<TimeCraftState>()(
           createdAt: nowIso(),
           updatedAt: nowIso(),
         };
-        set({ boxes: [...get().boxes, box] });
+        record();
+        set({ boxes: [...get().boxes, box], canUndo: true, canRedo: false });
         return box;
       },
 
@@ -455,6 +456,7 @@ export const useTimeCraftStore = create<TimeCraftState>()(
             }
           }
         }
+        record();
         set({
           boxes: get().boxes.map((b) => {
             if (b.id === id) return { ...b, ...patch, updatedAt: now };
@@ -468,6 +470,8 @@ export const useTimeCraftStore = create<TimeCraftState>()(
             }
             return b;
           }),
+          canUndo: true,
+          canRedo: false,
         });
       },
 
@@ -475,12 +479,15 @@ export const useTimeCraftStore = create<TimeCraftState>()(
         const target = get().boxes.find((b) => b.id === id);
         const cascadeMaster =
           target && isPoolMaster(target);
+        record();
         set({
           boxes: get().boxes.filter((b) => {
             if (b.id === id) return false;
             if (cascadeMaster && b.poolSourceId === id) return false;
             return true;
           }),
+          canUndo: true,
+          canRedo: false,
         });
       },
 
@@ -539,7 +546,8 @@ export const useTimeCraftStore = create<TimeCraftState>()(
             updatedAt: now,
           }));
 
-          set({ boxes: [...withoutLinked, ...newPlacements] });
+          record();
+          set({ boxes: [...withoutLinked, ...newPlacements], canUndo: true, canRedo: false });
           return;
         }
 
@@ -602,6 +610,7 @@ export const useTimeCraftStore = create<TimeCraftState>()(
 
       completeBox: (id, completion, actualDuration) => {
         const now = nowIso();
+        record();
         set({
           boxes: get().boxes.map((b) =>
             b.id === id
@@ -618,6 +627,8 @@ export const useTimeCraftStore = create<TimeCraftState>()(
                 }
               : b,
           ),
+          canUndo: true,
+          canRedo: false,
         });
       },
 
@@ -632,6 +643,7 @@ export const useTimeCraftStore = create<TimeCraftState>()(
           60;
         const snapped = snapBoxMoveTimes(startTime, dur);
         const planned = timeDiffMinutes(snapped.startTime, snapped.endTime);
+        record();
         set({
           boxes: get().boxes.map((b) =>
             b.id === id
@@ -647,6 +659,8 @@ export const useTimeCraftStore = create<TimeCraftState>()(
                 }
               : b,
           ),
+          canUndo: true,
+          canRedo: false,
         });
       },
 
@@ -654,7 +668,8 @@ export const useTimeCraftStore = create<TimeCraftState>()(
         const box = get().boxes.find((b) => b.id === id);
         if (!box) return;
         if (isLinkedPlacement(box)) {
-          set({ boxes: get().boxes.filter((b) => b.id !== id) });
+          record();
+          set({ boxes: get().boxes.filter((b) => b.id !== id), canUndo: true, canRedo: false });
           return;
         }
         if (isPoolMaster(box)) return;
@@ -662,6 +677,7 @@ export const useTimeCraftStore = create<TimeCraftState>()(
         const maxOrder = get()
           .boxes.filter((b) => isPoolMaster(b))
           .reduce((m, b) => Math.max(m, b.poolOrder ?? 0), 0);
+        record();
         set({
           boxes: get().boxes.map((b) =>
             b.id === id
@@ -674,6 +690,8 @@ export const useTimeCraftStore = create<TimeCraftState>()(
                 }
               : b,
           ),
+          canUndo: true,
+          canRedo: false,
         });
       },
 
@@ -707,6 +725,7 @@ export const useTimeCraftStore = create<TimeCraftState>()(
             b.status !== "deleted",
         );
         if (existing) {
+          record();
           set({
             boxes: get().boxes.map((b) =>
               b.id === existing.id
@@ -719,6 +738,8 @@ export const useTimeCraftStore = create<TimeCraftState>()(
                   }
                 : b,
             ),
+            canUndo: true,
+            canRedo: false,
           });
           return;
         }
@@ -744,7 +765,8 @@ export const useTimeCraftStore = create<TimeCraftState>()(
           createdAt: now,
           updatedAt: now,
         };
-        set({ boxes: [...get().boxes, placement] });
+        record();
+        set({ boxes: [...get().boxes, placement], canUndo: true, canRedo: false });
       },
 
       placeBoxInTop3: (id, date, slotIndex) => {
@@ -766,6 +788,7 @@ export const useTimeCraftStore = create<TimeCraftState>()(
           boxes = boxes.filter((b) => b.id !== displaced.id);
         }
 
+        record();
         if (isPoolMaster(box)) {
           const now = nowIso();
           const planned = timeDiffMinutes(slot.start, slot.end);
@@ -790,7 +813,7 @@ export const useTimeCraftStore = create<TimeCraftState>()(
             createdAt: now,
             updatedAt: now,
           };
-          set({ boxes: [...boxes, placement] });
+          set({ boxes: [...boxes, placement], canUndo: true, canRedo: false });
           return;
         }
 
@@ -812,6 +835,8 @@ export const useTimeCraftStore = create<TimeCraftState>()(
                 }
               : b,
           ),
+          canUndo: true,
+          canRedo: false,
         });
       },
 
@@ -825,18 +850,22 @@ export const useTimeCraftStore = create<TimeCraftState>()(
             b.status !== "deleted",
         );
         if (!target) return;
-        set({ boxes: get().boxes.filter((b) => b.id !== target.id) });
+        record();
+        set({ boxes: get().boxes.filter((b) => b.id !== target.id), canUndo: true, canRedo: false });
       },
 
       reorderPool: (orderedIds) => {
         const now = nowIso();
         const orderMap = new Map(orderedIds.map((id, idx) => [id, idx + 1]));
+        record();
         set({
           boxes: get().boxes.map((b) =>
             isPoolMaster(b) && orderMap.has(b.id)
               ? { ...b, poolOrder: orderMap.get(b.id), updatedAt: now }
               : b,
           ),
+          canUndo: true,
+          canRedo: false,
         });
       },
 
@@ -1098,7 +1127,25 @@ export const useTimeCraftStore = create<TimeCraftState>()(
           weekPlannerByWeek: {},
         });
       },
-    }),
+
+      canUndo: false,
+      canRedo: false,
+
+      undo: () => {
+        const prev = _past.pop();
+        if (!prev) return;
+        _future.push({ boxes: [...get().boxes] });
+        set({ boxes: prev.boxes, canUndo: _past.length > 0, canRedo: true });
+      },
+
+      redo: () => {
+        const next = _future.pop();
+        if (!next) return;
+        _past.push({ boxes: [...get().boxes] });
+        set({ boxes: next.boxes, canUndo: true, canRedo: _future.length > 0 });
+      },
+    };
+  },
     {
       name: "timecraft-storage-v1",
       storage: createJSONStorage(() => localStorage),
@@ -1111,6 +1158,9 @@ export const useTimeCraftStore = create<TimeCraftState>()(
           return;
         }
         if (!state) return;
+        // ページリロード後は履歴が消えるので canUndo/canRedo をリセット
+        state.canUndo = false;
+        state.canRedo = false;
         if (state.weekPlannerByWeek) {
           for (const key of Object.keys(state.weekPlannerByWeek)) {
             state.weekPlannerByWeek[key] = normalizeWeekPlanner(
@@ -1123,6 +1173,16 @@ export const useTimeCraftStore = create<TimeCraftState>()(
         const thisWeek = toISODate(weekStart(new Date()));
         if (state.boxes) {
           for (const b of state.boxes) {
+            // isPooled: false のまま繰り返しルールを持つグリッドボックスを pool マスターへ昇格。
+            // 保存前に repeatRule を追加した場合にできる壊れたデータを修復する。
+            // ※ poolWeekStart 設定より先に実行しないと thisWeek が付かない。
+            if (
+              b.isPooled === false &&
+              !b.poolSourceId &&
+              isMultiDateRepeatRule(b.repeatRule ?? "none")
+            ) {
+              b.isPooled = true;
+            }
             if (b.isPooled && !b.poolSourceId && !b.poolWeekStart) {
               b.poolWeekStart = thisWeek;
             }

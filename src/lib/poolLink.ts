@@ -13,8 +13,11 @@ export function isPoolMaster(box: Box): boolean {
 /** 週間表へ繰り返し配置できるマスター（旧データで isPooled 未設定でも repeat ありなら可） */
 export function canHostPoolPlacements(box: Box): boolean {
   if (box.poolSourceId) return false;
-  if (box.isPooled) return true;
-  return isMultiDateRepeatRule(box.repeatRule ?? "none");
+  if (box.isPooled === true) return true;
+  // isPooled: false は明示的にプール外グリッドボックスなので対象外。
+  // isPooled: undefined の旧データのみ繰り返しルールで判定する。
+  if (box.isPooled === undefined && isMultiDateRepeatRule(box.repeatRule ?? "none")) return true;
+  return false;
 }
 
 /** マスターから配置された連動コピー（週間スケジュール / Top3）。リストには表示しない。 */

@@ -313,28 +313,49 @@ export function BoxFormDialog({
       const masterId =
         initial.poolSourceId ??
         (isPoolMaster(initial) ? initial.id : undefined);
-      updateBox(initial.id, {
-        ...payload,
-        manuallyEdited: initial.googleEventId
-          ? true
-          : initial.manuallyEdited,
-      });
-      if (masterId && isMultiDateRepeatRule(form.repeatRule)) {
-        updateBox(masterId, {
-          ...basePayload(form.repeatRule),
-          date: form.date,
-          startTime: form.startTime,
-          endTime: form.endTime,
-          plannedDuration: planned,
+
+      // グリッド直置きボックス（プール外・poolSourceId なし）に繰り返しを追加した場合は
+      // pool マスターへ昇格させる。そうしないと isPooled: false のまま repeatRule を持ち、
+      // reconcileAllPoolRepeatPlacements が配置コピーを生成して二重表示になる。
+      const isDirectGridBox = !masterId && !initial.isPooled;
+      if (isDirectGridBox && isMultiDateRepeatRule(form.repeatRule)) {
+        updateBox(initial.id, {
+          ...payload,
           isPooled: true,
+          repeatRule: form.repeatRule,
+          manuallyEdited: initial.googleEventId ? true : initial.manuallyEdited,
         });
-        syncPoolMasterRepeatPlacements(masterId, {
+        syncPoolMasterRepeatPlacements(initial.id, {
           repeatRule: form.repeatRule,
           anchorDate: anchor,
           startDateIso: form.date,
           startTime: form.startTime,
           endTime: form.endTime,
         });
+      } else {
+        updateBox(initial.id, {
+          ...payload,
+          manuallyEdited: initial.googleEventId
+            ? true
+            : initial.manuallyEdited,
+        });
+        if (masterId && isMultiDateRepeatRule(form.repeatRule)) {
+          updateBox(masterId, {
+            ...basePayload(form.repeatRule),
+            date: form.date,
+            startTime: form.startTime,
+            endTime: form.endTime,
+            plannedDuration: planned,
+            isPooled: true,
+          });
+          syncPoolMasterRepeatPlacements(masterId, {
+            repeatRule: form.repeatRule,
+            anchorDate: anchor,
+            startDateIso: form.date,
+            startTime: form.startTime,
+            endTime: form.endTime,
+          });
+        }
       }
     } else if (isMultiDateRepeatRule(form.repeatRule)) {
       const master = addBox({
