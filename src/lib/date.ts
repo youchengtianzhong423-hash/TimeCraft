@@ -6,8 +6,16 @@ import {
   startOfWeek,
 } from "date-fns";
 
-/** Date -> yyyy-MM-dd */
-export const toISODate = (d: Date): string => format(d, "yyyy-MM-dd");
+/** ローカルタイム基準の日付キー (yyyy-MM-dd) */
+export const getLocalDateKey = (date: Date = new Date()): string => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+/** Date -> yyyy-MM-dd（ローカル日付） */
+export const toISODate = (d: Date): string => getLocalDateKey(d);
 
 /** yyyy-MM-dd -> Date (ローカルタイム0:00) */
 export const fromISODate = (s: string): Date => parseISO(s);

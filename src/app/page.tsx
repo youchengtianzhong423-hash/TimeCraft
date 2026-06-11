@@ -1,37 +1,32 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { addWeeks, format, isWithinInterval } from "date-fns";
 import { ChevronLeft, ChevronRight, Copy, Plus } from "lucide-react";
 import {
   DndContext,
-  DragEndEvent,
   PointerSensor,
   closestCenter,
   pointerWithin,
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
-import { arrayMove } from "@dnd-kit/sortable";
-import { parseTop3DropId } from "@/lib/top3";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
 import { WeekPlannerGrid } from "@/components/WeekPlannerGrid";
 import { PlannerSidebar } from "@/components/PlannerSidebar";
 import { BoxFormDialog } from "@/components/BoxFormDialog";
+import { ShortcutHelp } from "@/components/ShortcutHelp";
+import { ScheduleViewToggle } from "@/components/ScheduleViewToggle";
 import { useTimeCraftStore } from "@/store/useTimeCraftStore";
-import { isMultiDateRepeatRule } from "@/lib/repeatPlacements";
-import { canHostPoolPlacements, isPoolMaster } from "@/lib/poolLink";
-import {
-  canDropBoxOntoTop3,
-  canPlacePriorityOnVisionGrid,
-} from "@/lib/priorityRules";
-import { durationMinutes } from "@/lib/timeBlocks";
-import { snapBoxMoveTimes } from "@/lib/plannerSlots";
-import { weekStart, weekEnd } from "@/lib/date";
+import { getLocalDateKey, weekStart, weekEnd } from "@/lib/date";
 import { BOX_TYPES } from "@/lib/boxTypes";
 import { aggregateByType } from "@/lib/diagnose";
 import { HydrationGate } from "@/components/HydrationGate";
+import { UndoRedoToolbar } from "@/components/UndoRedoToolbar";
+import { useTimeCraftShortcuts } from "@/hooks/useTimeCraftShortcuts";
+import { useScheduleDragEnd } from "@/hooks/useScheduleDragEnd";
+import type { Box } from "@/lib/types";
 
 export default function Page() {
   return (
@@ -44,17 +39,10 @@ export default function Page() {
 function WeekPage() {
   const [anchor, setAnchor] = useState<Date>(new Date());
   const [createOpen, setCreateOpen] = useState(false);
+  const [editingBox, setEditingBox] = useState<Box | undefined>(undefined);
   const [dupMsg, setDupMsg] = useState<string | null>(null);
   const allBoxes = useTimeCraftStore((s) => s.boxes);
-  const moveBoxOnGrid = useTimeCraftStore((s) => s.moveBoxOnGrid);
-  const moveBoxToPool = useTimeCraftStore((s) => s.moveBoxToPool);
-  const placeBoxFromPool = useTimeCraftStore((s) => s.placeBoxFromPool);
-  const syncPoolMasterRepeatPlacements = useTimeCraftStore(
-    (s) => s.syncPoolMasterRepeatPlacements,
-  );
-  const placeBoxInTop3 = useTimeCraftStore((s) => s.placeBoxInTop3);
   const duplicateWeekToNext = useTimeCraftStore((s) => s.duplicateWeekToNext);
-  const reorderPool = useTimeCraftStore((s) => s.reorderPool);
 
   const weekBoxes = useMemo(() => {
     const start = weekStart(anchor);
@@ -67,113 +55,36 @@ function WeekPage() {
 
   const totals = useMemo(() => aggregateByType(weekBoxes), [weekBoxes]);
 
+  const altHeldRef = useRef(false);
+
+  useEffect(() => {
+    const onDown = (e: KeyboardEvent) => {
+      if (e.key === "Alt") altHeldRef.current = true;
+    };
+    const onUp = (e: KeyboardEvent) => {
+      if (e.key === "Alt") altHeldRef.current = false;
+    };
+    window.addEventListener("keydown", onDown);
+    window.addEventListener("keyup", onUp);
+    return () => {
+      window.removeEventListener("keydown", onDown);
+      window.removeEventListener("keyup", onUp);
+    };
+  }, []);
+
+  useTimeCraftShortcuts();
+
   const sensors = useSensors(
     useSensor(PointerSensor, {
-      activationConstraint: { distance: 5 },
+      activationConstraint: { distance: 8 },
     }),
   );
 
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    if (!over) return;
-
-    const activeId = String(active.id);
-    if (!activeId.startsWith("box|")) return;
-    const boxId = activeId.slice("box|".length);
-
-    const overId = String(over.id);
-    const origin = active.data.current?.origin as
-      | {
-          kind: "grid" | "pool" | "top3";
-          date?: string;
-          startTime?: string;
-          endTime?: string;
-          slotIndex?: number;
-        }
-      | undefined;
-
-    // プール内の並び替え（sortable → sortable）
-    if (origin?.kind === "pool" && overId.startsWith("box|")) {
-      const overBoxId = overId.slice("box|".length);
-      const overBox = allBoxes.find((b) => b.id === overBoxId);
-      if (overBox?.isPooled && boxId !== overBoxId) {
-        const poolMasters = [...allBoxes]
-          .filter((b) => isPoolMaster(b))
-          .sort((a, b) => {
-            const ao = a.poolOrder ?? 0;
-            const bo = b.poolOrder ?? 0;
-            return ao !== bo ? ao - bo : a.createdAt.localeCompare(b.createdAt);
-          });
-        const activeIdx = poolMasters.findIndex((b) => b.id === boxId);
-        const overIdx = poolMasters.findIndex((b) => b.id === overBoxId);
-        if (activeIdx !== -1 && overIdx !== -1) {
-          reorderPool(arrayMove(poolMasters, activeIdx, overIdx).map((b) => b.id));
-        }
-        return;
-      }
-    }
-
-    if (overId === "pool") {
-      if (origin?.kind === "pool") return;
-      moveBoxToPool(boxId);
-      return;
-    }
-
-    const top3Target = parseTop3DropId(overId);
-    if (top3Target) {
-      const { date, slotIndex } = top3Target;
-      const box = allBoxes.find((b) => b.id === boxId);
-      if (box && !canDropBoxOntoTop3(box, allBoxes)) return;
-      if (
-        origin?.kind === "top3" &&
-        origin.date === date &&
-        origin.slotIndex === slotIndex
-      ) {
-        return;
-      }
-      placeBoxInTop3(boxId, date, slotIndex);
-      return;
-    }
-
-    if (overId.startsWith("cell|")) {
-      const [, date, dropStart] = overId.split("|");
-      const box = allBoxes.find((b) => b.id === boxId);
-      if (box && !canPlacePriorityOnVisionGrid(box)) return;
-      const dur =
-        (box && durationMinutes(box.startTime, box.endTime)) ||
-        box?.plannedDuration ||
-        60;
-      const { startTime, endTime } = snapBoxMoveTimes(dropStart, dur);
-      if (
-        origin?.kind === "grid" &&
-        origin.date === date &&
-        origin.startTime === startTime &&
-        origin.endTime === endTime
-      ) {
-        return;
-      }
-      if (origin?.kind === "pool") {
-        const master = allBoxes.find((b) => b.id === boxId);
-        if (
-          master &&
-          canHostPoolPlacements(master) &&
-          isMultiDateRepeatRule(master.repeatRule ?? "none")
-        ) {
-          syncPoolMasterRepeatPlacements(boxId, {
-            repeatRule: master.repeatRule ?? "none",
-            anchorDate: anchor,
-            startDateIso: date,
-            startTime,
-            endTime,
-          });
-        } else {
-          placeBoxFromPool(boxId, date, startTime, endTime);
-        }
-      } else {
-        moveBoxOnGrid(boxId, date, startTime, endTime);
-      }
-    }
-  };
+  const handleDragEnd = useScheduleDragEnd({
+    allBoxes,
+    anchor,
+    altHeldRef,
+  });
 
   const collisionDetection = (
     args: Parameters<typeof closestCenter>[0],
@@ -187,9 +98,12 @@ function WeekPage() {
     <div className="p-4 md:p-6 w-full">
       <PageHeader
         title="週間スケジュール"
-        description="手帳風レイアウト。Vision＝計画、Real＝完了した実績。5:00〜22:00・15分刻みで移動・リサイズ。"
+        description="手帳風レイアウト。Vision＝計画、Real＝完了した実績。Alt+ドラッグで複製・ダブルクリックで編集。"
+        left={<UndoRedoToolbar />}
         right={
           <>
+            <ScheduleViewToggle />
+            <ShortcutHelp />
             <div className="inline-flex items-center rounded-lg border border-border bg-white">
               <Button
                 size="sm"
@@ -264,7 +178,11 @@ function WeekPage() {
         <div className="flex flex-row items-start gap-3 md:gap-4">
           <PlannerSidebar anchorDate={anchor} className="sticky top-4 z-10" />
           <div className="flex-1 min-w-0" data-week-planner>
-            <WeekPlannerGrid anchorDate={anchor} boxes={weekBoxes} />
+            <WeekPlannerGrid
+              anchorDate={anchor}
+              boxes={weekBoxes}
+              onEditBox={setEditingBox}
+            />
           </div>
         </div>
       </DndContext>
@@ -272,7 +190,13 @@ function WeekPage() {
       <BoxFormDialog
         open={createOpen}
         onClose={() => setCreateOpen(false)}
-        preset={{ date: format(new Date(), "yyyy-MM-dd") }}
+        preset={{ date: getLocalDateKey() }}
+        weekAnchor={anchor}
+      />
+      <BoxFormDialog
+        open={!!editingBox}
+        onClose={() => setEditingBox(undefined)}
+        initial={editingBox}
         weekAnchor={anchor}
       />
     </div>

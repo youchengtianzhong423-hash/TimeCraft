@@ -5,7 +5,7 @@ import {
   isMultiDateRepeatRule,
 } from "@/lib/repeatPlacements";
 
-/** マスターの繰り返しに対し、週間配置が不足・ずれていれば true */
+/** マスターの繰り返しに対し、週間配置が不足していれば true（時刻の一致は要求しない） */
 export function needsRepeatReconcile(
   boxes: Box[],
   master: Box,
@@ -23,19 +23,11 @@ export function needsRepeatReconcile(
     (b) => b.poolSourceId === master.id && b.status !== "deleted",
   );
 
-  if (linked.length !== expectedDates.length) return true;
-
-  const linkedByDate = new Map(linked.map((b) => [b.date, b]));
+  const linkedDates = new Set(linked.map((b) => b.date));
   for (const dateIso of expectedDates) {
-    const p = linkedByDate.get(dateIso);
-    if (!p) return true;
-    if (
-      p.startTime !== master.startTime ||
-      p.endTime !== master.endTime
-    ) {
-      return true;
-    }
+    if (!linkedDates.has(dateIso)) return true;
   }
+
   return false;
 }
 

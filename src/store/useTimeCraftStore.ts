@@ -45,6 +45,7 @@ import {
   isLinkedPlacement,
   isPoolMaster,
 } from "@/lib/poolLink";
+import { createGridPlacement } from "@/lib/placementFactory";
 import {
   cleanRealReflectionRecord,
   normalizeReflectionText,
@@ -124,9 +125,26 @@ export interface TimeCraftState {
   setDailyPriority: (date: string, text: string, anchorDate: Date) => void;
   setRealReflection: (cellKey: string, text: string, anchorDate: Date) => void;
   /** スケジュール上のボックス終了時刻を変更（下端リサイズ） */
-  resizeBoxEndTime: (id: string, endTime: string) => void;
+  resizeBoxEndTime: (
+    id: string,
+    endTime: string,
+    options?: { record?: boolean },
+  ) => void;
   /** スケジュール上のボックス開始時刻を変更（上端リサイズ） */
-  resizeBoxStartTime: (id: string, startTime: string) => void;
+  resizeBoxStartTime: (
+    id: string,
+    startTime: string,
+    options?: { record?: boolean },
+  ) => void;
+  /** グリッド上のボックスを複製（元は残す） */
+  duplicateBoxOnGrid: (
+    sourceId: string,
+    date: string,
+    startTime: string,
+    endTime: string,
+  ) => Box | null;
+  /** 同一時刻で複数曜日へ横方向複製 */
+  duplicateBoxesToDates: (sourceId: string, dates: string[]) => Box[];
   /** 表示週の予定・週間メモを翌週へ複製 */
   duplicateWeekToNext: (anchorDate: Date) => number;
 
@@ -135,6 +153,14 @@ export interface TimeCraftState {
       status?: BoxStatus;
     },
   ) => Box;
+  /** 複数ボックスを1回の Undo 履歴で追加 */
+  addBoxesBatch: (
+    inputs: Array<
+      Omit<Box, "id" | "status" | "createdAt" | "updatedAt"> & {
+        status?: BoxStatus;
+      }
+    >,
+  ) => Box[];
   updateBox: (id: string, patch: Partial<Box>) => void;
   removeBox: (id: string) => void;
   /** やることリストマスターに紐づく週間配置コピーをすべて削除 */
@@ -240,6 +266,10 @@ export interface TimeCraftState {
   redo: () => void;
   canUndo: boolean;
   canRedo: boolean;
+
+  /** 週間 / 今日ビューで選択中のボックス ID */
+  selectedBoxId: string | null;
+  setSelectedBoxId: (id: string | null) => void;
 }
 
 const nowIso = (): string => new Date().toISOString();
@@ -358,12 +388,13 @@ export const useTimeCraftStore = create<TimeCraftState>()(
         });
       },
 
-      resizeBoxEndTime: (id, endTime) => {
+      resizeBoxEndTime: (id, endTime, options) => {
         const now = nowIso();
         const scheduleEndMin = Math.min(
           (get().scheduleStartHour + PLANNER_BLOCK_COUNT) * 60,
           24 * 60,
         );
+        if (options?.record) record();
         set({
           boxes: get().boxes.map((b) => {
             if (b.id !== id) return b;
@@ -377,15 +408,20 @@ export const useTimeCraftStore = create<TimeCraftState>()(
               ...b,
               endTime: end,
               plannedDuration: planned,
+              manuallyEdited: true,
               updatedAt: now,
             };
           }),
+          ...(options?.record
+            ? { canUndo: true, canRedo: false }
+            : {}),
         });
       },
 
-      resizeBoxStartTime: (id, startTime) => {
+      resizeBoxStartTime: (id, startTime, options) => {
         const now = nowIso();
         const scheduleStartMin = get().scheduleStartHour * 60;
+        if (options?.record) record();
         set({
           boxes: get().boxes.map((b) => {
             if (b.id !== id) return b;
@@ -402,9 +438,13 @@ export const useTimeCraftStore = create<TimeCraftState>()(
               ...b,
               startTime: start,
               plannedDuration: planned,
+              manuallyEdited: true,
               updatedAt: now,
             };
           }),
+          ...(options?.record
+            ? { canUndo: true, canRedo: false }
+            : {}),
         });
       },
 
@@ -443,6 +483,25 @@ export const useTimeCraftStore = create<TimeCraftState>()(
         record();
         set({ boxes: [...get().boxes, box], canUndo: true, canRedo: false });
         return box;
+      },
+
+      addBoxesBatch: (inputs) => {
+        if (inputs.length === 0) return [];
+        const now = nowIso();
+        const newBoxes: Box[] = inputs.map((input) => ({
+          ...input,
+          id: newId(),
+          status: input.status ?? "notStarted",
+          createdAt: now,
+          updatedAt: now,
+        }));
+        record();
+        set({
+          boxes: [...get().boxes, ...newBoxes],
+          canUndo: true,
+          canRedo: false,
+        });
+        return newBoxes;
       },
 
       updateBox: (id, patch) => {
@@ -501,8 +560,6 @@ export const useTimeCraftStore = create<TimeCraftState>()(
         const master = get().boxes.find((b) => b.id === masterId);
         if (!master || !canHostPoolPlacements(master)) return;
         /** 優先は週間 Vision へ展開せず Top3 のみ */
-        if (master.type === "priority") return;
-
         const { repeatRule, anchorDate, startDateIso, startTime, endTime } =
           params;
 
@@ -521,33 +578,58 @@ export const useTimeCraftStore = create<TimeCraftState>()(
             timeDiffMinutes(snapped.startTime, snapped.endTime) ||
             master.plannedDuration;
 
-          const withoutLinked = get().boxes.filter(
-            (b) => b.poolSourceId !== masterId,
+          const recurrenceGroupId =
+            master.recurrenceGroupId ?? newId();
+          const existingLinked = get().boxes.filter(
+            (b) =>
+              b.poolSourceId === masterId && b.status !== "deleted",
           );
-          const newPlacements: Box[] = dates.map((dateIso) => ({
-            ...master,
-            id: newId(),
-            poolSourceId: master.id,
-            date: dateIso,
-            startTime: snapped.startTime,
-            endTime: snapped.endTime,
-            plannedDuration,
-            isPooled: false,
-            poolOrder: undefined,
-            repeatRule: "none" as const,
-            status: "notStarted" as const,
-            completion: undefined,
-            startedAt: undefined,
-            pausedAt: undefined,
-            completedAt: undefined,
-            googleEventId: undefined,
-            googleCalendarId: undefined,
-            createdAt: now,
-            updatedAt: now,
-          }));
+          const existingByDate = new Map(
+            existingLinked.map((b) => [b.date, b]),
+          );
+          const expectedSet = new Set(dates);
+
+          const newPlacements: Box[] = [];
+          for (const dateIso of dates) {
+            if (existingByDate.has(dateIso)) continue;
+            newPlacements.push(
+              createGridPlacement(master, {
+                date: dateIso,
+                startTime: snapped.startTime,
+                endTime: snapped.endTime,
+                plannedDuration,
+                poolSourceId: master.id,
+                recurrenceGroupId,
+                now,
+              }),
+            );
+          }
+
+          const removeIds = existingLinked
+            .filter(
+              (b) =>
+                !expectedSet.has(b.date) &&
+                !b.manuallyEdited &&
+                !b.recurrenceGroupId,
+            )
+            .map((b) => b.id);
 
           record();
-          set({ boxes: [...withoutLinked, ...newPlacements], canUndo: true, canRedo: false });
+          set({
+            boxes: [
+              ...get()
+                .boxes.filter((b) => !removeIds.includes(b.id))
+                .map((b) => {
+                  if (b.id === masterId && !b.recurrenceGroupId) {
+                    return { ...b, recurrenceGroupId, updatedAt: now };
+                  }
+                  return b;
+                }),
+              ...newPlacements,
+            ],
+            canUndo: true,
+            canRedo: false,
+          });
           return;
         }
 
@@ -558,17 +640,15 @@ export const useTimeCraftStore = create<TimeCraftState>()(
           get().placeBoxFromPool(masterId, startDateIso, startTime, endTime);
           return;
         }
-        if (linked.length > 1) {
-          get().removeLinkedPlacements(masterId);
-          get().placeBoxFromPool(masterId, startDateIso, startTime, endTime);
-          return;
-        }
-        get().updateBox(linked[0].id, {
+        const target =
+          linked.find((b) => b.date === startDateIso) ?? linked[0];
+        get().updateBox(target.id, {
           date: startDateIso,
           startTime,
           endTime,
           plannedDuration:
             timeDiffMinutes(startTime, endTime) || master.plannedDuration,
+          manuallyEdited: true,
         });
       },
 
@@ -654,7 +734,7 @@ export const useTimeCraftStore = create<TimeCraftState>()(
                   endTime: snapped.endTime,
                   plannedDuration: planned > 0 ? planned : b.plannedDuration,
                   isPooled: false,
-                  manuallyEdited: b.googleEventId ? true : b.manuallyEdited,
+                  manuallyEdited: true,
                   updatedAt: now,
                 }
               : b,
@@ -662,6 +742,73 @@ export const useTimeCraftStore = create<TimeCraftState>()(
           canUndo: true,
           canRedo: false,
         });
+      },
+
+      duplicateBoxOnGrid: (sourceId, date, startTime, endTime) => {
+        const source = get().boxes.find((b) => b.id === sourceId);
+        if (!source || source.isPooled) return null;
+        if (!canPlacePriorityOnVisionGrid(source)) return null;
+
+        const dur =
+          timeDiffMinutes(startTime, endTime) ||
+          timeDiffMinutes(source.startTime, source.endTime) ||
+          source.plannedDuration ||
+          60;
+        const snapped = snapBoxMoveTimes(startTime, dur);
+        const planned = timeDiffMinutes(snapped.startTime, snapped.endTime);
+        const now = nowIso();
+
+        const copy = createGridPlacement(source, {
+          date,
+          startTime: snapped.startTime,
+          endTime: snapped.endTime,
+          plannedDuration: planned > 0 ? planned : source.plannedDuration,
+          poolSourceId: undefined,
+          recurrenceGroupId: source.recurrenceGroupId,
+          now,
+        });
+        copy.manuallyEdited = true;
+
+        record();
+        set({
+          boxes: [...get().boxes, copy],
+          canUndo: true,
+          canRedo: false,
+        });
+        return copy;
+      },
+
+      duplicateBoxesToDates: (sourceId, dates) => {
+        const source = get().boxes.find((b) => b.id === sourceId);
+        if (!source || source.isPooled) return [];
+
+        const uniqueDates = [
+          ...new Set(dates.filter((d) => d !== source.date)),
+        ];
+        if (uniqueDates.length === 0) return [];
+
+        const now = nowIso();
+        const copies = uniqueDates.map((date) => {
+          const copy = createGridPlacement(source, {
+            date,
+            startTime: source.startTime,
+            endTime: source.endTime,
+            plannedDuration: source.plannedDuration,
+            poolSourceId: undefined,
+            recurrenceGroupId: source.recurrenceGroupId,
+            now,
+          });
+          copy.manuallyEdited = true;
+          return copy;
+        });
+
+        record();
+        set({
+          boxes: [...get().boxes, ...copies],
+          canUndo: true,
+          canRedo: false,
+        });
+        return copies;
       },
 
       moveBoxToPool: (id) => {
@@ -703,7 +850,6 @@ export const useTimeCraftStore = create<TimeCraftState>()(
           return;
         }
         if (!isPoolMaster(master)) return;
-        if (master.type === "priority") return;
 
         const dur =
           timeDiffMinutes(startTime, endTime) ||
@@ -744,27 +890,15 @@ export const useTimeCraftStore = create<TimeCraftState>()(
           return;
         }
 
-        const placement: Box = {
-          ...master,
-          id: newId(),
-          poolSourceId: master.id,
+        const placement = createGridPlacement(master, {
           date,
           startTime: snapped.startTime,
           endTime: snapped.endTime,
           plannedDuration,
-          isPooled: false,
-          poolOrder: undefined,
-          repeatRule: "none",
-          status: "notStarted",
-          completion: undefined,
-          startedAt: undefined,
-          pausedAt: undefined,
-          completedAt: undefined,
-          googleEventId: undefined,
-          googleCalendarId: undefined,
-          createdAt: now,
-          updatedAt: now,
-        };
+          poolSourceId: master.id,
+          recurrenceGroupId: master.recurrenceGroupId,
+          now,
+        });
         record();
         set({ boxes: [...get().boxes, placement], canUndo: true, canRedo: false });
       },
@@ -1130,6 +1264,9 @@ export const useTimeCraftStore = create<TimeCraftState>()(
 
       canUndo: false,
       canRedo: false,
+
+      selectedBoxId: null,
+      setSelectedBoxId: (id) => set({ selectedBoxId: id }),
 
       undo: () => {
         const prev = _past.pop();

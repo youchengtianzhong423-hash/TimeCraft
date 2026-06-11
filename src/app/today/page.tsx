@@ -1,19 +1,34 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { format } from "date-fns";
+import { getLocalDateKey } from "@/lib/date";
+import { ja } from "date-fns/locale";
 import { Plus } from "lucide-react";
+import {
+  DndContext,
+  PointerSensor,
+  closestCenter,
+  pointerWithin,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
-import { BoxListItem } from "@/components/BoxListItem";
 import { BoxFormDialog } from "@/components/BoxFormDialog";
 import { WarningBanner } from "@/components/WarningBanner";
+import { DayScheduleGrid } from "@/components/DayScheduleGrid";
+import { PlannerSidebar } from "@/components/PlannerSidebar";
+import { ShortcutHelp } from "@/components/ShortcutHelp";
+import { ScheduleViewToggle } from "@/components/ScheduleViewToggle";
+import { UndoRedoToolbar } from "@/components/UndoRedoToolbar";
 import { useTimeCraftStore } from "@/store/useTimeCraftStore";
-import { toMinutes } from "@/lib/timeBlocks";
+import { durationMinutes } from "@/lib/timeBlocks";
 import { aggregateByType, diagnoseDay } from "@/lib/diagnose";
-import { BOX_TYPES, getBoxTypeMeta } from "@/lib/boxTypes";
-import type { Box } from "@/lib/types";
 import { HydrationGate } from "@/components/HydrationGate";
+import { useTimeCraftShortcuts } from "@/hooks/useTimeCraftShortcuts";
+import { useScheduleDragEnd } from "@/hooks/useScheduleDragEnd";
+import type { Box } from "@/lib/types";
 
 export default function Page() {
   return (
@@ -23,141 +38,172 @@ export default function Page() {
   );
 }
 
+function formatHoursMinutes(totalMin: number): string {
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  if (h > 0 && m > 0) return `${h}時間${m}分`;
+  if (h > 0) return `${h}時間`;
+  return `${m}分`;
+}
+
 function TodayPage() {
-  const today = format(new Date(), "yyyy-MM-dd");
+  const today = getLocalDateKey();
+  const todayDate = useMemo(() => new Date(), []);
   const allBoxes = useTimeCraftStore((s) => s.boxes);
   const [createOpen, setCreateOpen] = useState(false);
+  const [createPreset, setCreatePreset] = useState<{ date: string; startTime?: string }>({
+    date: today,
+  });
   const [editingBox, setEditingBox] = useState<Box | undefined>(undefined);
 
   const todayBoxes = useMemo(
     () =>
-      allBoxes
-        .filter(
-          (b) => !b.isPooled && b.date === today && b.status !== "deleted",
-        )
-        .sort((a, b) => toMinutes(a.startTime) - toMinutes(b.startTime)),
+      allBoxes.filter(
+        (b) => !b.isPooled && b.date === today && b.status !== "deleted",
+      ),
     [allBoxes, today],
   );
 
   const diagnosis = useMemo(() => diagnoseDay(todayBoxes), [todayBoxes]);
   const totals = useMemo(() => aggregateByType(todayBoxes), [todayBoxes]);
 
-  const priorityBoxes = todayBoxes.filter((b) => b.type === "priority");
-  const otherBoxes = todayBoxes.filter((b) => b.type !== "priority");
+  const scheduledMin = useMemo(
+    () =>
+      todayBoxes.reduce(
+        (acc, b) => acc + durationMinutes(b.startTime, b.endTime),
+        0,
+      ) - totals.whitespace,
+    [todayBoxes, totals.whitespace],
+  );
+
+  const altHeldRef = useRef(false);
+
+  useEffect(() => {
+    const onDown = (e: KeyboardEvent) => {
+      if (e.key === "Alt") altHeldRef.current = true;
+    };
+    const onUp = (e: KeyboardEvent) => {
+      if (e.key === "Alt") altHeldRef.current = false;
+    };
+    window.addEventListener("keydown", onDown);
+    window.addEventListener("keyup", onUp);
+    return () => {
+      window.removeEventListener("keydown", onDown);
+      window.removeEventListener("keyup", onUp);
+    };
+  }, []);
+
+  useTimeCraftShortcuts();
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 8 },
+    }),
+  );
+
+  const handleDragEnd = useScheduleDragEnd({
+    allBoxes,
+    anchor: todayDate,
+    altHeldRef,
+  });
+
+  const collisionDetection = (
+    args: Parameters<typeof closestCenter>[0],
+  ) => {
+    const pointer = pointerWithin(args);
+    if (pointer.length > 0) return pointer;
+    return closestCenter(args);
+  };
+
+  const openCreate = (startTime?: string) => {
+    setCreatePreset({ date: today, startTime });
+    setCreateOpen(true);
+  };
 
   return (
-    <div className="p-4 md:p-8 max-w-5xl mx-auto">
+    <div className="p-4 md:p-6 w-full max-w-4xl mx-auto">
       <PageHeader
         title="今日ビュー"
-        description={format(new Date(), "yyyy年M月d日 (EEEE)")}
+        description={format(todayDate, "yyyy年M月d日 (EEEE)", { locale: ja })}
+        left={<UndoRedoToolbar />}
         right={
-          <Button onClick={() => setCreateOpen(true)}>
-            <Plus size={14} />
-            今日に追加
-          </Button>
+          <>
+            <ScheduleViewToggle />
+            <ShortcutHelp />
+            <Button onClick={() => openCreate()}>
+              <Plus size={14} />
+              今日に追加
+            </Button>
+          </>
         }
       />
 
-      <div className="mb-6">
-        <WarningBanner diagnosis={diagnosis} />
+      <div className="mb-4 flex flex-wrap gap-4 text-sm text-slate-700">
+        <span>
+          予定：<strong>{todayBoxes.length}</strong>件
+        </span>
+        <span>
+          予定時間：<strong>{formatHoursMinutes(Math.max(0, scheduledMin))}</strong>
+        </span>
+        <span>
+          余白：<strong>{formatHoursMinutes(totals.whitespace)}</strong>
+        </span>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 mb-6">
-        {BOX_TYPES.slice(0, 5).map((t) => {
-          const mins = totals[t.type];
-          return (
-            <div
-              key={t.type}
-              className={`rounded-xl border ${t.border} ${t.bgSoft} p-3`}
-            >
-              <div className={`text-[10px] font-medium ${t.text}`}>
-                {t.emoji} {t.shortLabel}
-              </div>
-              <div className={`mt-1 text-lg font-bold ${t.text}`}>
-                {Math.floor(mins / 60)}
-                <span className="text-xs font-medium">h</span>{" "}
-                {mins % 60}
-                <span className="text-xs font-medium">m</span>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      <section className="mb-8">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2">
-            <span>{getBoxTypeMeta("priority").emoji}</span>
-            今日の優先ボックス
-            <span className="text-xs text-muted font-normal">
-              （{priorityBoxes.length}/3）
-            </span>
-          </h2>
+      {diagnosis.level !== "ok" && (
+        <div className="mb-4">
+          <WarningBanner diagnosis={diagnosis} />
         </div>
-        {priorityBoxes.length === 0 ? (
-          <EmptyState
-            message="今日の最重要タスクを2〜3個に絞って配置しましょう。"
-            actionLabel="優先ボックスを追加"
-            onAction={() => setCreateOpen(true)}
-          />
-        ) : (
-          <div className="grid md:grid-cols-2 gap-3">
-            {priorityBoxes.map((b) => (
-              <BoxListItem key={b.id} box={b} onEdit={setEditingBox} />
-            ))}
-          </div>
-        )}
-      </section>
+      )}
 
-      <section>
-        <h2 className="text-base font-semibold text-slate-900 mb-3">
-          今日のすべてのボックス
-        </h2>
-        {otherBoxes.length === 0 && priorityBoxes.length === 0 ? (
-          <EmptyState
-            message="今日のスケジュールはまだ空です。固定予定から配置していきましょう。"
-            actionLabel="ボックスを追加"
-            onAction={() => setCreateOpen(true)}
+      <DndContext
+        sensors={sensors}
+        collisionDetection={collisionDetection}
+        onDragEnd={handleDragEnd}
+      >
+        <div className="flex flex-col md:flex-row items-start gap-3 md:gap-4">
+          <PlannerSidebar
+            anchorDate={todayDate}
+            className="w-full md:w-auto md:sticky md:top-4 z-10 shrink-0"
           />
-        ) : (
-          <div className="grid md:grid-cols-2 gap-3">
-            {otherBoxes.map((b) => (
-              <BoxListItem key={b.id} box={b} onEdit={setEditingBox} />
-            ))}
+          <div className="flex-1 min-w-0 w-full">
+            {todayBoxes.length === 0 ? (
+              <div
+                className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/50 px-5 py-10 text-center mb-2"
+                onDoubleClick={() => openCreate("09:00")}
+              >
+                <p className="text-sm font-medium text-slate-800 mb-2">
+                  今日の予定はまだありません
+                </p>
+                <p className="text-xs text-muted leading-relaxed">
+                  週間ビューから予定を追加するか、
+                  <br />
+                  この画面をダブルクリックしてボックスを作成できます。
+                </p>
+              </div>
+            ) : null}
+            <DayScheduleGrid
+              dateIso={today}
+              boxes={allBoxes}
+              onEditBox={setEditingBox}
+              onCreateAt={(startTime) => openCreate(startTime)}
+            />
           </div>
-        )}
-      </section>
+        </div>
+      </DndContext>
 
       <BoxFormDialog
         open={createOpen}
         onClose={() => setCreateOpen(false)}
-        preset={{ date: today }}
+        preset={createPreset}
+        weekAnchor={todayDate}
       />
       <BoxFormDialog
         open={!!editingBox}
         onClose={() => setEditingBox(undefined)}
         initial={editingBox}
+        weekAnchor={todayDate}
       />
-    </div>
-  );
-}
-
-function EmptyState({
-  message,
-  actionLabel,
-  onAction,
-}: {
-  message: string;
-  actionLabel: string;
-  onAction: () => void;
-}) {
-  return (
-    <div className="rounded-xl border border-dashed border-slate-300 bg-white px-5 py-8 text-center">
-      <p className="text-sm text-muted mb-3">{message}</p>
-      <Button onClick={onAction} variant="outline" size="sm">
-        <Plus size={14} />
-        {actionLabel}
-      </Button>
     </div>
   );
 }

@@ -10,6 +10,7 @@ import { cn } from "@/lib/cn";
 interface Props {
   box: Box;
   onClick?: () => void;
+  onDoubleClick?: () => void;
   compact?: boolean;
   /** 親要素の高さいっぱいに広げる（タイムライン表示用） */
   fillHeight?: boolean;
@@ -36,6 +37,7 @@ interface Props {
 export function DraggableBoxItem({
   box,
   onClick,
+  onDoubleClick,
   compact,
   fillHeight,
   dragId,
@@ -76,6 +78,17 @@ export function DraggableBoxItem({
         !showSideGrip && "touch-none cursor-grab active:cursor-grabbing",
       )}
       {...(!showSideGrip ? dragProps : {})}
+      onDoubleClick={
+        onDoubleClick
+          ? (e) => {
+              e.stopPropagation();
+              onDoubleClick();
+            }
+          : undefined
+      }
+      title={
+        onDoubleClick ? "ダブルクリックで編集・ドラッグで移動" : undefined
+      }
     >
       <div
         className={cn(

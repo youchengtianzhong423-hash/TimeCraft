@@ -8,6 +8,7 @@ import type { BoxTemplate, BoxType } from "@/lib/types";
 import { Button } from "./ui/Button";
 import { FieldRow, Input, Textarea } from "./ui/Field";
 import { cn } from "@/lib/cn";
+import { getLocalDateKey } from "@/lib/date";
 
 interface DraftState {
   id?: string;
@@ -70,7 +71,7 @@ export function TemplatePanel() {
   };
 
   const addToPoolFromTemplate = (t: BoxTemplate) => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = getLocalDateKey();
     addBox({
       title: t.title,
       type: t.type,

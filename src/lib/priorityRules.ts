@@ -12,12 +12,9 @@ export function listPoolPriorityMasters(boxes: Box[]): Box[] {
   );
 }
 
-/** 週間 Vision グリッド（時間軸）に置いてよい優先ボックスか — Top3 のみ可 */
-export function canPlacePriorityOnVisionGrid(box: Box): boolean {
-  if (box.type !== "priority") return true;
-  if (box.isPooled) return false;
-  if (isTop3StartTime(box.startTime)) return false;
-  return false;
+/** 週間 Vision グリッド（時間軸）に置いてよいか — 全種類共通で可（Top3 行は別 UI） */
+export function canPlacePriorityOnVisionGrid(_box: Box): boolean {
+  return true;
 }
 
 export function isPriorityPoolMaster(box: Box): boolean {

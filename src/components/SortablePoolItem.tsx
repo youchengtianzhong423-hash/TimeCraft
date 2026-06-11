@@ -2,7 +2,7 @@
 
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical } from "lucide-react";
+import { GripVertical, Pencil } from "lucide-react";
 import type { Box } from "@/lib/types";
 import { getBoxTypeMeta } from "@/lib/boxTypes";
 import { cn } from "@/lib/cn";
@@ -12,7 +12,7 @@ interface Props {
   dragId: string;
   origin: { kind: "pool" };
   schedulePlacementCount?: number;
-  onClick?: () => void;
+  onEdit?: () => void;
   onDelete?: () => void;
 }
 
@@ -21,7 +21,7 @@ export function SortablePoolItem({
   dragId,
   origin,
   schedulePlacementCount = 0,
-  onClick,
+  onEdit,
   onDelete,
 }: Props) {
   const meta = getBoxTypeMeta(box.type);
@@ -54,28 +54,28 @@ export function SortablePoolItem({
       ref={setNodeRef}
       style={style}
       className={cn(
-        "group/sort flex items-stretch rounded-md border overflow-hidden",
+        "group/sort flex items-stretch rounded-md border overflow-hidden touch-none",
         meta.bg,
         meta.border,
         meta.text,
-        isDragging && "opacity-40",
+        isDragging && "opacity-50 shadow-lg ring-2 ring-indigo-300",
+        "cursor-grab active:cursor-grabbing",
       )}
+      {...attributes}
+      {...listeners}
+      onDoubleClick={(e) => {
+        e.stopPropagation();
+        onEdit?.();
+      }}
+      title="ドラッグで配置・ダブルクリックで編集"
     >
-      {/* ドラッググリップ */}
-      <div
-        {...attributes}
-        {...listeners}
-        className="touch-none cursor-grab active:cursor-grabbing flex items-center px-1 shrink-0 opacity-0 group-hover/sort:opacity-50 transition-opacity"
-      >
+      <div className="flex items-center px-0.5 shrink-0 opacity-30 group-hover/sort:opacity-60 pointer-events-none">
         <GripVertical size={11} />
       </div>
 
-      {/* クリックで編集 */}
-      <button
-        type="button"
-        onClick={onClick}
+      <div
         className={cn(
-          "flex-1 min-w-0 py-1 pr-1 text-left",
+          "flex-1 min-w-0 py-1 pr-1 select-none",
           done && "opacity-60",
         )}
       >
@@ -103,14 +103,33 @@ export function SortablePoolItem({
             {box.startTime} – {box.endTime}
           </div>
         )}
-      </button>
+      </div>
 
-      {/* 削除 */}
+      {onEdit && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onEdit();
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+          className="shrink-0 self-center px-1 text-slate-500 opacity-0 group-hover/sort:opacity-70 hover:!opacity-100 md:hidden"
+          aria-label="編集"
+          title="編集"
+        >
+          <Pencil size={12} />
+        </button>
+      )}
+
       <button
         type="button"
-        onClick={onDelete}
+        onClick={(e) => {
+          e.stopPropagation();
+          onDelete?.();
+        }}
         onPointerDown={(e) => e.stopPropagation()}
         className="shrink-0 self-center px-1.5 text-[10px] opacity-0 group-hover/sort:opacity-40 hover:!opacity-100 hover:text-rose-600 transition-all"
+        aria-label="削除"
       >
         ✕
       </button>

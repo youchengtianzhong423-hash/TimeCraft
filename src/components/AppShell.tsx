@@ -16,6 +16,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { ViewPreferenceBoot } from "@/components/ViewPreferenceBoot";
 
 const NAV_OPEN_KEY = "timecraft-nav-open-v1";
 
@@ -25,7 +26,7 @@ const NAV = [
   { href: "/reviews", label: "レビュー", icon: NotebookPen },
   { href: "/analytics", label: "分析", icon: LineChart },
   { href: "/dashboard", label: "ダッシュボード", icon: LayoutDashboard },
-  { href: "/import", label: "インポート", icon: Download },
+  { href: "/import", label: "メモから作成", icon: Download },
   { href: "/settings", label: "設定", icon: Settings },
 ];
 
@@ -63,6 +64,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-screen">
+      <ViewPreferenceBoot />
       <aside
         className={cn(
           "hidden md:flex relative shrink-0 flex-col border-r border-border bg-white transition-[width] duration-200 ease-out overflow-hidden",

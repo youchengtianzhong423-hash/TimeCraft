@@ -151,10 +151,11 @@ function SettingsPage() {
 
       <section className="mb-8">
         <h2 className="text-base font-semibold text-slate-900 mb-3">
-          Obsidian インポート
+          メモから時間を作る
         </h2>
         <Link
           href="/import"
+          title="メモから時間を作る"
           className="block rounded-2xl border border-border bg-white p-5 hover:shadow-md transition-shadow group"
         >
           <div className="flex items-start gap-3">
@@ -163,7 +164,7 @@ function SettingsPage() {
             </div>
             <div className="flex-1 min-w-0">
               <div className="font-semibold text-slate-900 flex items-center gap-1">
-                Obsidian デイリーノートから取り込み
+                文章からボックス候補を作成
                 <ArrowRight
                   size={14}
                   className="opacity-60 group-hover:translate-x-0.5 transition-transform"

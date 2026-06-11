@@ -12,7 +12,7 @@ import { cn } from "@/lib/cn";
 import { Trash2, AlertTriangle, Calendar, Sparkles, ListPlus, Copy } from "lucide-react";
 import { isPoolMaster } from "@/lib/poolLink";
 import { POOL_PLACEHOLDER } from "@/lib/repeatWeek";
-import { toISODate, weekStart } from "@/lib/date";
+import { getLocalDateKey, toISODate, weekStart } from "@/lib/date";
 import {
   getRepeatPlacementDates,
   isMultiDateRepeatRule,
@@ -52,7 +52,7 @@ interface FormState {
 const emptyState = (preset?: Props["preset"]): FormState => ({
   title: "",
   type: preset?.type ?? "priority",
-  date: preset?.date ?? new Date().toISOString().slice(0, 10),
+  date: preset?.date ?? getLocalDateKey(),
   startTime: preset?.startTime ?? "08:00",
   endTime: preset?.endTime ?? "10:00",
   purpose: "",
@@ -310,50 +310,55 @@ export function BoxFormDialog({
     };
 
     if (initial) {
-      const masterId =
-        initial.poolSourceId ??
-        (isPoolMaster(initial) ? initial.id : undefined);
-
-      // グリッド直置きボックス（プール外・poolSourceId なし）に繰り返しを追加した場合は
-      // pool マスターへ昇格させる。そうしないと isPooled: false のまま repeatRule を持ち、
-      // reconcileAllPoolRepeatPlacements が配置コピーを生成して二重表示になる。
-      const isDirectGridBox = !masterId && !initial.isPooled;
-      if (isDirectGridBox && isMultiDateRepeatRule(form.repeatRule)) {
+      // 週間表の配置コピーはこの1件だけ更新（他曜日へ波及しない）
+      if (initial.poolSourceId) {
         updateBox(initial.id, {
           ...payload,
-          isPooled: true,
-          repeatRule: form.repeatRule,
-          manuallyEdited: initial.googleEventId ? true : initial.manuallyEdited,
-        });
-        syncPoolMasterRepeatPlacements(initial.id, {
-          repeatRule: form.repeatRule,
-          anchorDate: anchor,
-          startDateIso: form.date,
-          startTime: form.startTime,
-          endTime: form.endTime,
+          repeatRule: "none",
+          manuallyEdited: true,
         });
       } else {
-        updateBox(initial.id, {
-          ...payload,
-          manuallyEdited: initial.googleEventId
-            ? true
-            : initial.manuallyEdited,
-        });
-        if (masterId && isMultiDateRepeatRule(form.repeatRule)) {
-          updateBox(masterId, {
-            ...basePayload(form.repeatRule),
-            date: form.date,
-            startTime: form.startTime,
-            endTime: form.endTime,
-            plannedDuration: planned,
+        const isDirectGridBox = !initial.isPooled;
+
+        // グリッド直置きボックスに繰り返しを追加した場合は pool マスターへ昇格
+        if (isDirectGridBox && isMultiDateRepeatRule(form.repeatRule)) {
+          updateBox(initial.id, {
+            ...payload,
             isPooled: true,
+            repeatRule: form.repeatRule,
+            manuallyEdited: initial.googleEventId ? true : initial.manuallyEdited,
           });
-          syncPoolMasterRepeatPlacements(masterId, {
+          syncPoolMasterRepeatPlacements(initial.id, {
             repeatRule: form.repeatRule,
             anchorDate: anchor,
             startDateIso: form.date,
             startTime: form.startTime,
             endTime: form.endTime,
+          });
+        } else if (
+          isPoolMaster(initial) &&
+          isMultiDateRepeatRule(form.repeatRule)
+        ) {
+          updateBox(initial.id, {
+            ...payload,
+            isPooled: true,
+            manuallyEdited: initial.googleEventId
+              ? true
+              : initial.manuallyEdited,
+          });
+          syncPoolMasterRepeatPlacements(initial.id, {
+            repeatRule: form.repeatRule,
+            anchorDate: anchor,
+            startDateIso: form.date,
+            startTime: form.startTime,
+            endTime: form.endTime,
+          });
+        } else {
+          updateBox(initial.id, {
+            ...payload,
+            manuallyEdited: initial.googleEventId
+              ? true
+              : initial.manuallyEdited,
           });
         }
       }

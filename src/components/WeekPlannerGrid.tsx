@@ -15,6 +15,10 @@ import { DroppableTop3Slot } from "./DroppableTop3Slot";
 import { Top3TaskTitle } from "./Top3TaskTitle";
 import { Top3PrioritySelect } from "./Top3PrioritySelect";
 import { VisionScheduleBox } from "./VisionScheduleBox";
+import {
+  HorizontalCopyPreviewLayer,
+  HorizontalDuplicatePreviewProvider,
+} from "./HorizontalDuplicatePreview";
 import { RealReflectionCell } from "./RealReflectionCell";
 import { findBoxInTop3Slot } from "@/lib/top3";
 import { cn } from "@/lib/cn";
@@ -72,13 +76,16 @@ const DIVIDER_STYLE: CSSProperties = {
 interface Props {
   anchorDate: Date;
   boxes: Box[];
+  onEditBox?: (box: Box) => void;
 }
 
-export function WeekPlannerGrid({ anchorDate, boxes }: Props) {
+export function WeekPlannerGrid({ anchorDate, boxes, onEditBox }: Props) {
   const days = weekDays(anchorDate);
   const setDailyPriority = useTimeCraftStore((s) => s.setDailyPriority);
   const completeBox = useTimeCraftStore((s) => s.completeBox);
   const scheduleStartHour = useTimeCraftStore((s) => s.scheduleStartHour);
+  const selectedBoxId = useTimeCraftStore((s) => s.selectedBoxId);
+  const setSelectedBoxId = useTimeCraftStore((s) => s.setSelectedBoxId);
   const planner = useWeekPlanner(anchorDate);
 
   // 動的タイムライン定数
@@ -158,15 +165,21 @@ export function WeekPlannerGrid({ anchorDate, boxes }: Props) {
     };
   }
 
+  const weekDates = days.map((d) => toISODate(d));
+
   const renderVisionOverlay = (dayBoxes: Box[]) => {
     const { laneOf, totalLanesOf } = assignLanes(dayBoxes);
     return dayBoxes.map((b) => (
       <VisionScheduleBox
         key={b.id}
         box={b}
+        weekDates={weekDates}
         timelineStartMin={dayStartMin}
         timelineDurMin={dayDurMin}
         style={boxLayoutStyle(b, laneOf.get(b.id) ?? 0, totalLanesOf.get(b.id) ?? 1)}
+        selected={selectedBoxId === b.id}
+        onSelect={() => setSelectedBoxId(b.id)}
+        onEdit={onEditBox ? () => onEditBox(b) : undefined}
       />
     ));
   };
@@ -187,7 +200,7 @@ export function WeekPlannerGrid({ anchorDate, boxes }: Props) {
   };
 
   return (
-    <>
+    <HorizontalDuplicatePreviewProvider>
       <div className="overflow-x-auto rounded-2xl border border-border bg-white shadow-sm">
         <div className="min-w-[1100px]">
           {/* 曜日ヘッダー */}
@@ -367,7 +380,11 @@ export function WeekPlannerGrid({ anchorDate, boxes }: Props) {
                   className="col-span-2 grid grid-cols-2 border-l border-border"
                 >
                   {/* Vision 列 */}
-                  <div className="relative flex flex-col border-r border-border bg-white">
+                  <div
+                    className="relative flex flex-col border-r border-border bg-white"
+                    data-vision-day={dateIso}
+                    onClick={() => setSelectedBoxId(null)}
+                  >
                     {plannerHourBlocks.map((block, i) => {
                       const isPastMidnight = scheduleStartHour + i >= 24;
                       return (
@@ -406,6 +423,10 @@ export function WeekPlannerGrid({ anchorDate, boxes }: Props) {
                       aria-hidden={visionBoxes.length === 0}
                     >
                       <div className="relative h-full w-full">
+                        <HorizontalCopyPreviewLayer
+                          dateIso={dateIso}
+                          boxes={boxes}
+                        />
                         {renderVisionOverlay(visionBoxes)}
                       </div>
                     </div>
@@ -451,6 +472,6 @@ export function WeekPlannerGrid({ anchorDate, boxes }: Props) {
           </div>
         </div>
       </div>
-    </>
+    </HorizontalDuplicatePreviewProvider>
   );
 }

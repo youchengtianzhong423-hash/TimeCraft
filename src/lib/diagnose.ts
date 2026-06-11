@@ -1,5 +1,5 @@
 import type { Box } from "./types";
-import { durationMinutes } from "./timeBlocks";
+import { durationMinutes, toMinutes } from "./timeBlocks";
 
 export interface Diagnosis {
   level: "ok" | "info" | "warning" | "danger";
@@ -91,6 +91,23 @@ export const diagnoseDay = (dayBoxes: Box[]): Diagnosis => {
         "1日14時間以上を予定で埋めていませんか？人間は計画通りには動けません。空白を残しましょう。";
     }
     suggestions.push("ボックスを減らして余白を増やす");
+  }
+
+  const sorted = [...active].sort(
+    (a, b) => toMinutes(a.startTime) - toMinutes(b.startTime),
+  );
+  const hasOverlap = sorted.some((b, i) => {
+    if (i === 0) return false;
+    return toMinutes(b.startTime) < toMinutes(sorted[i - 1].endTime);
+  });
+  if (hasOverlap) {
+    if (level === "ok") level = "warning";
+    title = title === "バランスの取れた一日です" ? "予定が重なっています" : title;
+    message =
+      message +
+      (message.endsWith("。") ? "" : "。") +
+      " 同じ時間帯に複数のボックスが重なっています。時間をずらすか、統合を検討してください。";
+    suggestions.push("重なっているボックスの時間を調整する");
   }
 
   return { level, title, message, suggestions };

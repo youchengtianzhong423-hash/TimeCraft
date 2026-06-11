@@ -7,7 +7,7 @@ import { Inbox, Plus } from "lucide-react";
 import type { Box } from "@/lib/types";
 import { useTimeCraftStore } from "@/store/useTimeCraftStore";
 import { countGridLinkedPlacements, isPoolMaster } from "@/lib/poolLink";
-import { toISODate, weekStart } from "@/lib/date";
+import { getLocalDateKey, toISODate, weekStart } from "@/lib/date";
 import { DraggableBoxItem } from "./DraggableBoxItem";
 import { SortablePoolItem } from "./SortablePoolItem";
 import { BoxFormDialog } from "./BoxFormDialog";
@@ -179,7 +179,7 @@ export function PoolPanel({ boxes, weekAnchor, vertical, className }: Props) {
                       dragId={`box|${b.id}`}
                       origin={{ kind: "pool" }}
                       schedulePlacementCount={placementCount}
-                      onClick={() => {
+                      onEdit={() => {
                         setEditingBox(b);
                         setFormOpen(true);
                       }}
@@ -208,7 +208,7 @@ export function PoolPanel({ boxes, weekAnchor, vertical, className }: Props) {
                     origin={{ kind: "pool" }}
                     dragHandleOnly={false}
                     schedulePlacementCount={placementCount}
-                    onClick={() => {
+                    onDoubleClick={() => {
                       setEditingBox(b);
                       setFormOpen(true);
                     }}
@@ -246,7 +246,7 @@ export function PoolPanel({ boxes, weekAnchor, vertical, className }: Props) {
       <BoxFormDialog
         open={createOpen}
         onClose={() => setCreateOpen(false)}
-        preset={{ date: new Date().toISOString().slice(0, 10) }}
+        preset={{ date: getLocalDateKey() }}
         fromPool
         weekAnchor={weekAnchor}
       />

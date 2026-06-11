@@ -89,6 +89,11 @@ export interface Box {
   poolWeekStart?: string;
   /** 由来テンプレート ID（あれば） */
   templateId?: string;
+  /**
+   * 同じ繰り返し設定から生成された配置グループ ID。
+   * 通常の移動・編集ではグループ全体を更新しない。
+   */
+  recurrenceGroupId?: string;
   createdAt: string;
   updatedAt: string;
 }
