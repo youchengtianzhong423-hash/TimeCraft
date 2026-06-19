@@ -35,8 +35,6 @@ export interface WeekPlannerNotes {
   weeklyEvaluation: string;
   /** yyyy-MM-dd → その日の Daily Priority テキスト */
   dailyPriority: Record<string, string>;
-  /** yyyy-MM-dd -> 今日ビュー用の自由メモ */
-  dailyMemo?: Record<string, string>;
   /** `date|blockStart|blockEnd` → Real 列の振り返りメモ（表示ラベルなし） */
   realReflection: Record<string, string>;
 }

@@ -12,6 +12,7 @@ import {
 } from "@/lib/timeBlocks";
 import { quarterSlotsForHour } from "@/lib/plannerSlots";
 import { DroppableCell } from "./DroppableCell";
+import { RealReflectionCell } from "./RealReflectionCell";
 import { VisionScheduleBox } from "./VisionScheduleBox";
 import { CurrentTimeLine, useScrollToCurrentTime } from "./CurrentTimeLine";
 import { useTimeCraftStore } from "@/store/useTimeCraftStore";
@@ -57,6 +58,7 @@ function assignLanes<T extends { id: string; startTime: string; endTime: string 
 
 interface Props {
   dateIso: string;
+  anchorDate: Date;
   boxes: Box[];
   onEditBox?: (box: Box) => void;
   onCreateAt?: (startTime: string) => void;
@@ -64,6 +66,7 @@ interface Props {
 
 export function DayScheduleGrid({
   dateIso,
+  anchorDate,
   boxes,
   onEditBox,
   onCreateAt,
@@ -89,6 +92,17 @@ export function DayScheduleGrid({
   );
 
   const { laneOf, totalLanesOf } = assignLanes(dayBoxes);
+
+  const completedBoxes = dayBoxes.filter((b) => b.status === "completed");
+
+  const completedInBlock = (blockStart: string, blockEnd: string): Box[] => {
+    const startMin = toMinutes(blockStart);
+    const endMin = toMinutes(blockEnd);
+    return completedBoxes.filter((b) => {
+      const boxStartMin = toMinutes(b.startTime);
+      return boxStartMin >= startMin && boxStartMin < endMin;
+    });
+  };
 
   const boxLayoutStyle = (
     box: Box,
@@ -135,75 +149,98 @@ export function DayScheduleGrid({
           ))}
         </div>
 
-        <div
-          className="relative flex-1 flex flex-col bg-white"
-          data-vision-day={dateIso}
-          onDoubleClick={(e) => {
-            if (!onCreateAt) return;
-            if ((e.target as HTMLElement).closest("[data-schedule-box]")) return;
-            const rect = e.currentTarget.getBoundingClientRect();
-            const ratio = (e.clientY - rect.top) / rect.height;
-            const min = dayStartMin + ratio * dayDurMin;
-            onCreateAt(minutesToHHmm(snapScheduleMinutes(min)));
-          }}
-        >
-          {plannerHourBlocks.map((block, i) => {
-            const isPastMidnight = scheduleStartHour + i >= 24;
-            return (
+        <div className="flex flex-1 min-w-0">
+          <div
+            className="relative flex-1 min-w-[18rem] flex flex-col bg-white"
+            data-vision-day={dateIso}
+            onDoubleClick={(e) => {
+              if (!onCreateAt) return;
+              if ((e.target as HTMLElement).closest("[data-schedule-box]")) return;
+              const rect = e.currentTarget.getBoundingClientRect();
+              const ratio = (e.clientY - rect.top) / rect.height;
+              const min = dayStartMin + ratio * dayDurMin;
+              onCreateAt(minutesToHHmm(snapScheduleMinutes(min)));
+            }}
+          >
+            {plannerHourBlocks.map((block, i) => {
+              const isPastMidnight = scheduleStartHour + i >= 24;
+              return (
+                <div
+                  key={block.start}
+                  className={cn(
+                    PLANNER_CELL_H,
+                    "shrink-0 border-b border-border flex flex-col",
+                  )}
+                >
+                  {!isPastMidnight &&
+                    quarterSlotsForHour(block.start, block.end).map((slot) => (
+                      <DroppableCell
+                        key={slot.start}
+                        dropId={`cell|${dateIso}|${slot.start}|${slot.end}`}
+                        data={{
+                          kind: "grid",
+                          date: dateIso,
+                          startTime: slot.start,
+                          endTime: slot.end,
+                        }}
+                        className="flex-1 min-h-0 relative border-t border-slate-50 first:border-t-0"
+                      >
+                        {null}
+                      </DroppableCell>
+                    ))}
+                </div>
+              );
+            })}
+
+            <div className="absolute inset-0 z-10 pointer-events-none">
+              <div className="relative h-full w-full pointer-events-none">
+                <CurrentTimeLine
+                  dateIso={dateIso}
+                  timelineStartMin={dayStartMin}
+                  timelineDurMin={dayDurMin}
+                />
+                {dayBoxes.map((b) => (
+                  <div key={b.id} className="pointer-events-auto">
+                    <VisionScheduleBox
+                      box={b}
+                      weekDates={[dateIso]}
+                      timelineStartMin={dayStartMin}
+                      timelineDurMin={dayDurMin}
+                      style={boxLayoutStyle(
+                        b,
+                        laneOf.get(b.id) ?? 0,
+                        totalLanesOf.get(b.id) ?? 1,
+                      )}
+                      selected={selectedBoxId === b.id}
+                      onSelect={() => setSelectedBoxId(b.id)}
+                      onEdit={onEditBox ? () => onEditBox(b) : undefined}
+                      showHorizontalHandles={false}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="w-56 shrink-0 border-l border-border bg-slate-50/30">
+            {plannerHourBlocks.map((block) => (
               <div
                 key={block.start}
                 className={cn(
                   PLANNER_CELL_H,
-                  "shrink-0 border-b border-border flex flex-col",
+                  "shrink-0 border-b border-border relative",
                 )}
               >
-                {!isPastMidnight &&
-                  quarterSlotsForHour(block.start, block.end).map((slot) => (
-                    <DroppableCell
-                      key={slot.start}
-                      dropId={`cell|${dateIso}|${slot.start}|${slot.end}`}
-                      data={{
-                        kind: "grid",
-                        date: dateIso,
-                        startTime: slot.start,
-                        endTime: slot.end,
-                      }}
-                      className="flex-1 min-h-0 relative border-t border-slate-50 first:border-t-0"
-                    >
-                      {null}
-                    </DroppableCell>
-                  ))}
+                <RealReflectionCell
+                  dateIso={dateIso}
+                  blockStart={block.start}
+                  blockEnd={block.end}
+                  anchorDate={anchorDate}
+                  completedInBlock={completedInBlock(block.start, block.end)}
+                  className="absolute inset-0"
+                />
               </div>
-            );
-          })}
-
-          <div className="absolute inset-0 z-10 pointer-events-none">
-            <div className="relative h-full w-full pointer-events-none">
-              <CurrentTimeLine
-                dateIso={dateIso}
-                timelineStartMin={dayStartMin}
-                timelineDurMin={dayDurMin}
-              />
-              {dayBoxes.map((b) => (
-                <div key={b.id} className="pointer-events-auto">
-                  <VisionScheduleBox
-                    box={b}
-                    weekDates={[dateIso]}
-                    timelineStartMin={dayStartMin}
-                    timelineDurMin={dayDurMin}
-                    style={boxLayoutStyle(
-                      b,
-                      laneOf.get(b.id) ?? 0,
-                      totalLanesOf.get(b.id) ?? 1,
-                    )}
-                    selected={selectedBoxId === b.id}
-                    onSelect={() => setSelectedBoxId(b.id)}
-                    onEdit={onEditBox ? () => onEditBox(b) : undefined}
-                    showHorizontalHandles={false}
-                  />
-                </div>
-              ))}
-            </div>
+            ))}
           </div>
         </div>
       </div>
