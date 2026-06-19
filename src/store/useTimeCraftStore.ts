@@ -66,6 +66,7 @@ export const EMPTY_WEEK_PLANNER: WeekPlannerNotes = {
   microSuccess: "",
   weeklyEvaluation: "",
   dailyPriority: {},
+  dailyMemo: {},
   realReflection: {},
 };
 
@@ -75,10 +76,12 @@ function normalizeWeekPlanner(
   weekStartKey: string,
 ): WeekPlannerNotes {
   const dailyPriority = w.dailyPriority ?? {};
+  const dailyMemo = w.dailyMemo ?? {};
   const realReflection = cleanRealReflectionRecord(w.realReflection ?? {});
   if (
     w.weekStart === weekStartKey &&
     w.dailyPriority === dailyPriority &&
+    w.dailyMemo === dailyMemo &&
     w.realReflection === realReflection
   ) {
     return w;
@@ -89,6 +92,7 @@ function normalizeWeekPlanner(
     microSuccess: w.microSuccess ?? "",
     weeklyEvaluation: w.weeklyEvaluation ?? "",
     dailyPriority,
+    dailyMemo,
     realReflection,
   };
 }
@@ -123,6 +127,7 @@ export interface TimeCraftState {
     >,
   ) => void;
   setDailyPriority: (date: string, text: string, anchorDate: Date) => void;
+  setDailyMemo: (date: string, text: string, anchorDate: Date) => void;
   setRealReflection: (cellKey: string, text: string, anchorDate: Date) => void;
   /** スケジュール上のボックス終了時刻を変更（下端リサイズ） */
   resizeBoxEndTime: (
@@ -353,6 +358,33 @@ export const useTimeCraftStore = create<TimeCraftState>()(
               {
                 ...cur,
                 dailyPriority: { ...cur.dailyPriority, [date]: text },
+              },
+              key,
+            ),
+          },
+        });
+      },
+
+      setDailyMemo: (date, text, anchorDate) => {
+        const key = toISODate(weekStart(anchorDate));
+        const stored = get().weekPlannerByWeek[key];
+        const cur = normalizeWeekPlanner(
+          stored ?? EMPTY_WEEK_PLANNER,
+          key,
+        );
+        const nextMemo = { ...(cur.dailyMemo ?? {}) };
+        if (text.trim()) {
+          nextMemo[date] = text;
+        } else {
+          delete nextMemo[date];
+        }
+        set({
+          weekPlannerByWeek: {
+            ...get().weekPlannerByWeek,
+            [key]: normalizeWeekPlanner(
+              {
+                ...cur,
+                dailyMemo: nextMemo,
               },
               key,
             ),

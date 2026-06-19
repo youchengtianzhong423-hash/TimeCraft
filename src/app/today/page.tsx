@@ -19,6 +19,7 @@ import { BoxFormDialog } from "@/components/BoxFormDialog";
 import { WarningBanner } from "@/components/WarningBanner";
 import { DayScheduleGrid } from "@/components/DayScheduleGrid";
 import { PlannerSidebar } from "@/components/PlannerSidebar";
+import { TodayMemoPanel } from "@/components/TodayMemoPanel";
 import { ShortcutHelp } from "@/components/ShortcutHelp";
 import { ScheduleViewToggle } from "@/components/ScheduleViewToggle";
 import { UndoRedoToolbar } from "@/components/UndoRedoToolbar";
@@ -162,10 +163,17 @@ function TodayPage() {
         onDragEnd={handleDragEnd}
       >
         <div className="flex flex-col md:flex-row items-start gap-3 md:gap-4">
-          <PlannerSidebar
-            anchorDate={todayDate}
-            className="w-full md:w-auto md:sticky md:top-4 z-10 shrink-0"
-          />
+          <div className="w-full md:w-auto md:sticky md:top-4 z-10 shrink-0 flex flex-col gap-3">
+            <PlannerSidebar
+              anchorDate={todayDate}
+              className="w-full md:w-auto"
+            />
+            <TodayMemoPanel
+              dateIso={today}
+              anchorDate={todayDate}
+              className="w-full md:w-52"
+            />
+          </div>
           <div className="flex-1 min-w-0 w-full">
             {todayBoxes.length === 0 ? (
               <div
