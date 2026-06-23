@@ -21,11 +21,11 @@ import {
 } from "@/lib/repeatPlacements";
 import { needsRepeatReconcile } from "@/lib/repeatReconcile";
 import { newId } from "@/lib/id";
+import { addWeeks } from "date-fns";
 import { toISODate, weekStart } from "@/lib/date";
 import {
   collectWeekScheduleBoxes,
   duplicateWeekBoxPayload,
-  shouldSkipWeekDuplicate,
 } from "@/lib/duplicateWeek";
 import { snapBoxMoveTimes } from "@/lib/plannerSlots";
 import {
@@ -123,7 +123,12 @@ export interface TimeCraftState {
     >,
   ) => void;
   setDailyPriority: (date: string, text: string, anchorDate: Date) => void;
-  setRealReflection: (cellKey: string, text: string, anchorDate: Date) => void;
+  setRealReflection: (
+    cellKey: string,
+    text: string,
+    anchorDate: Date,
+    legacyKeysToClear?: string[],
+  ) => void;
   /** スケジュール上のボックス終了時刻を変更（下端リサイズ） */
   resizeBoxEndTime: (
     id: string,
@@ -360,7 +365,7 @@ export const useTimeCraftStore = create<TimeCraftState>()(
         });
       },
 
-      setRealReflection: (cellKey, text, anchorDate) => {
+      setRealReflection: (cellKey, text, anchorDate, legacyKeysToClear = []) => {
         const key = toISODate(weekStart(anchorDate));
         const stored = get().weekPlannerByWeek[key];
         const cur = normalizeWeekPlanner(
@@ -369,6 +374,9 @@ export const useTimeCraftStore = create<TimeCraftState>()(
         );
         const normalized = normalizeReflectionText(text);
         const nextReflection = { ...cur.realReflection };
+        for (const legacyKey of legacyKeysToClear) {
+          if (legacyKey !== cellKey) delete nextReflection[legacyKey];
+        }
         if (normalized.trim()) {
           nextReflection[cellKey] = normalized;
         } else {
@@ -453,15 +461,92 @@ export const useTimeCraftStore = create<TimeCraftState>()(
         const allBoxes = get().boxes;
 
         // 通常スケジュールボックスを翌週へ複製
-        const source = collectWeekScheduleBoxes(allBoxes, anchorDate);
-        const newBoxes: Box[] = source
-          .filter((b) => !shouldSkipWeekDuplicate(b, allBoxes))
-          .map((b) => ({
-            ...duplicateWeekBoxPayload(b, 7),
+        const currentWeekKey = toISODate(weekStart(anchorDate));
+        const nextWeekKey = toISODate(addWeeks(weekStart(anchorDate), 1));
+        const sourceSchedule = collectWeekScheduleBoxes(allBoxes, anchorDate);
+        const referencedMasterIds = new Set(
+          sourceSchedule
+            .map((b) => b.poolSourceId)
+            .filter((id): id is string => !!id),
+        );
+        const sourceMasters = allBoxes.filter(
+          (b) =>
+            isPoolMaster(b) &&
+            b.status !== "deleted" &&
+            (b.poolWeekStart === currentWeekKey ||
+              !b.poolWeekStart ||
+              referencedMasterIds.has(b.id)),
+        );
+
+        const poolSignature = (b: Box) =>
+          `${b.title.trim()}|${b.type}|${b.startTime}|${b.endTime}`;
+        const scheduleSignature = (
+          b: Pick<Box, "date" | "startTime" | "endTime" | "title" | "type">,
+        ) =>
+          `${b.date}|${b.startTime}|${b.endTime}|${b.title.trim()}|${b.type}`;
+
+        const existingNextMasters = allBoxes.filter(
+          (b) => isPoolMaster(b) && b.poolWeekStart === nextWeekKey,
+        );
+        const existingMasterBySignature = new Map(
+          existingNextMasters.map((b) => [poolSignature(b), b]),
+        );
+        const masterIdMap = new Map<string, string>();
+        const newMasters: Box[] = [];
+
+        for (const master of sourceMasters) {
+          const signature = poolSignature(master);
+          const existing = existingMasterBySignature.get(signature);
+          if (existing) {
+            masterIdMap.set(master.id, existing.id);
+            continue;
+          }
+
+          const copiedMaster: Box = {
+            ...duplicateWeekBoxPayload(master, 7),
             id: newId(),
+            isPooled: true,
+            poolSourceId: undefined,
+            poolWeekStart: nextWeekKey,
+            repeatRule: "none",
+            recurrenceGroupId: undefined,
             createdAt: now,
             updatedAt: now,
-          }));
+          };
+          newMasters.push(copiedMaster);
+          existingMasterBySignature.set(signature, copiedMaster);
+          masterIdMap.set(master.id, copiedMaster.id);
+        }
+
+        const targetSignatures = new Set(
+          allBoxes
+            .filter((b) => !b.isPooled && b.status !== "deleted")
+            .map(scheduleSignature),
+        );
+        const newScheduleBoxes: Box[] = [];
+
+        for (const source of sourceSchedule) {
+          const payload = duplicateWeekBoxPayload(source, 7);
+          const signature = scheduleSignature(payload);
+          if (targetSignatures.has(signature)) continue;
+
+          const copy: Box = {
+            ...payload,
+            id: newId(),
+            poolSourceId: source.poolSourceId
+              ? masterIdMap.get(source.poolSourceId)
+              : undefined,
+            repeatRule: "none",
+            recurrenceGroupId: undefined,
+            createdAt: now,
+            updatedAt: now,
+          };
+          newScheduleBoxes.push(copy);
+          targetSignatures.add(signature);
+        }
+
+        const newBoxes = [...newMasters, ...newScheduleBoxes];
+        if (newBoxes.length === 0) return 0;
 
         record();
         set({

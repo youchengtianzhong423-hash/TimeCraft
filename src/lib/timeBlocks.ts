@@ -23,6 +23,35 @@ export function buildPlannerHourBlocks(startHour: number): TimeBlock[] {
   });
 }
 
+export interface ReflectionBlock extends TimeBlock {
+  sourceBlocks: TimeBlock[];
+}
+
+/**
+ * Real 欄を原則2時間単位にまとめる。
+ * 偶数時を境界にすることで、12:00 と 24:00 をセルの途中に入れない。
+ */
+export function buildReflectionBlocks(
+  hourBlocks: TimeBlock[],
+): ReflectionBlock[] {
+  const result: ReflectionBlock[] = [];
+  for (let i = 0; i < hourBlocks.length; ) {
+    const first = hourBlocks[i];
+    const startHour = Math.floor(toMinutes(first.start) / 60);
+    const size = startHour % 2 === 0 && i + 1 < hourBlocks.length ? 2 : 1;
+    const sourceBlocks = hourBlocks.slice(i, i + size);
+    const last = sourceBlocks[sourceBlocks.length - 1];
+    result.push({
+      start: first.start,
+      end: last.end,
+      label: `${first.label} - ${Math.floor(toMinutes(last.end) / 60) % 24}:00`,
+      sourceBlocks,
+    });
+    i += size;
+  }
+  return result;
+}
+
 /** 手帳風週間ビュー用（デフォルト 6:00〜24:00・1時間刻み） */
 export const PLANNER_HOUR_BLOCKS: TimeBlock[] = buildPlannerHourBlocks(DEFAULT_SCHEDULE_START_HOUR);
 

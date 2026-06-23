@@ -14,6 +14,7 @@ interface Props {
   blockEnd: string;
   anchorDate: Date;
   completedInBlock: Box[];
+  legacyBlocks?: Array<{ start: string; end: string }>;
   className?: string;
 }
 
@@ -23,13 +24,21 @@ export function RealReflectionCell({
   blockEnd,
   anchorDate,
   completedInBlock,
+  legacyBlocks = [],
   className,
 }: Props) {
   const cellKey = reflectionCellKey(dateIso, blockStart, blockEnd);
   const planner = useWeekPlanner(anchorDate);
   const setRealReflection = useTimeCraftStore((s) => s.setRealReflection);
+  const legacyKeys = legacyBlocks.map((block) =>
+    reflectionCellKey(dateIso, block.start, block.end),
+  );
+  const legacyValue = legacyKeys
+    .map((key) => normalizeReflectionText(planner.realReflection[key] ?? ""))
+    .filter((text) => text.trim())
+    .join("\n");
   const value = normalizeReflectionText(
-    planner.realReflection[cellKey] ?? "",
+    planner.realReflection[cellKey] ?? legacyValue,
   );
 
   return (
@@ -56,7 +65,7 @@ export function RealReflectionCell({
         aria-label="時間帯のメモ"
         value={value}
         onChange={(e) =>
-          setRealReflection(cellKey, e.target.value, anchorDate)
+          setRealReflection(cellKey, e.target.value, anchorDate, legacyKeys)
         }
         className={cn(
           "flex-1 min-h-[1.25rem] w-full resize-none rounded border border-emerald-200/70",

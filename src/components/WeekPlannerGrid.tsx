@@ -4,6 +4,7 @@ import type { CSSProperties } from "react";
 import type { Box } from "@/lib/types";
 import {
   buildPlannerHourBlocks,
+  buildReflectionBlocks,
   overlapsPlannerDay,
   PLANNER_BLOCK_COUNT,
   toMinutes,
@@ -15,6 +16,7 @@ import { DroppableTop3Slot } from "./DroppableTop3Slot";
 import { Top3TaskTitle } from "./Top3TaskTitle";
 import { Top3PrioritySelect } from "./Top3PrioritySelect";
 import { VisionScheduleBox } from "./VisionScheduleBox";
+import { CurrentTimeLine } from "./CurrentTimeLine";
 import {
   HorizontalCopyPreviewLayer,
   HorizontalDuplicatePreviewProvider,
@@ -90,6 +92,7 @@ export function WeekPlannerGrid({ anchorDate, boxes, onEditBox }: Props) {
 
   // 動的タイムライン定数
   const plannerHourBlocks = buildPlannerHourBlocks(scheduleStartHour);
+  const reflectionBlocks = buildReflectionBlocks(plannerHourBlocks);
   const dayStartMin = scheduleStartHour * 60;
   const dayDurMin = PLANNER_BLOCK_COUNT * 60; // 常に 18h
   const dayEndMin = dayStartMin + dayDurMin;
@@ -101,6 +104,13 @@ export function WeekPlannerGrid({ anchorDate, boxes, onEditBox }: Props) {
     const absHour = scheduleStartHour + i;
     if (absHour === 11) return true;
     if (absHour === 23 && scheduleStartHour >= 7) return true;
+    return false;
+  };
+
+  const hasReflectionDividerBottom = (blockEnd: string): boolean => {
+    const endHour = Math.floor(toMinutes(blockEnd) / 60);
+    if (endHour === 12) return true;
+    if (endHour === 24 && scheduleStartHour >= 7) return true;
     return false;
   };
 
@@ -423,6 +433,11 @@ export function WeekPlannerGrid({ anchorDate, boxes, onEditBox }: Props) {
                       aria-hidden={visionBoxes.length === 0}
                     >
                       <div className="relative h-full w-full">
+                        <CurrentTimeLine
+                          dateIso={dateIso}
+                          timelineStartMin={dayStartMin}
+                          timelineDurMin={dayDurMin}
+                        />
                         <HorizontalCopyPreviewLayer
                           dateIso={dateIso}
                           boxes={boxes}
@@ -434,14 +449,16 @@ export function WeekPlannerGrid({ anchorDate, boxes, onEditBox }: Props) {
 
                   {/* Real 列 */}
                   <div className="relative flex flex-col bg-slate-50/30">
-                    {plannerHourBlocks.map((block, i) => (
+                    {reflectionBlocks.map((block) => (
                       <div
-                        key={block.start}
-                        className={cn(
-                          PLANNER_CELL_H,
-                          "shrink-0 border-b border-border relative z-0",
-                        )}
-                        style={hasDividerBottom(i) ? DIVIDER_STYLE : undefined}
+                        key={`${block.start}-${block.end}`}
+                        className="shrink-0 border-b border-border relative z-0"
+                        style={{
+                          height: `${block.sourceBlocks.length * 52}px`,
+                          ...(hasReflectionDividerBottom(block.end)
+                            ? DIVIDER_STYLE
+                            : {}),
+                        }}
                       >
                         <RealReflectionCell
                           dateIso={dateIso}
@@ -453,6 +470,7 @@ export function WeekPlannerGrid({ anchorDate, boxes, onEditBox }: Props) {
                             block.start,
                             block.end,
                           )}
+                          legacyBlocks={block.sourceBlocks}
                           className="absolute inset-0"
                         />
                       </div>

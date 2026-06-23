@@ -4,6 +4,7 @@ import { useRef, type CSSProperties } from "react";
 import type { Box } from "@/lib/types";
 import {
   buildPlannerHourBlocks,
+  buildReflectionBlocks,
   minutesToHHmm,
   overlapsPlannerDay,
   PLANNER_BLOCK_COUNT,
@@ -77,6 +78,7 @@ export function DayScheduleGrid({
   const setSelectedBoxId = useTimeCraftStore((s) => s.setSelectedBoxId);
 
   const plannerHourBlocks = buildPlannerHourBlocks(scheduleStartHour);
+  const reflectionBlocks = buildReflectionBlocks(plannerHourBlocks);
   const dayStartMin = scheduleStartHour * 60;
   const dayDurMin = PLANNER_BLOCK_COUNT * 60;
   const dayEndMin = dayStartMin + dayDurMin;
@@ -131,7 +133,7 @@ export function DayScheduleGrid({
   return (
     <div
       ref={scrollRef}
-      className="overflow-y-auto max-h-[min(70vh,720px)] rounded-2xl border border-border bg-white shadow-sm"
+      className="overflow-auto h-[calc(100vh-10rem)] min-h-[640px] max-h-[900px] rounded-2xl border border-border bg-white shadow-sm"
       onClick={() => setSelectedBoxId(null)}
     >
       <div className="flex min-h-[936px]">
@@ -222,14 +224,12 @@ export function DayScheduleGrid({
             </div>
           </div>
 
-          <div className="w-56 shrink-0 border-l border-border bg-slate-50/30">
-            {plannerHourBlocks.map((block) => (
+          <div className="w-[clamp(11rem,22%,16rem)] shrink-0 border-l border-border bg-slate-50/30">
+            {reflectionBlocks.map((block) => (
               <div
-                key={block.start}
-                className={cn(
-                  PLANNER_CELL_H,
-                  "shrink-0 border-b border-border relative",
-                )}
+                key={`${block.start}-${block.end}`}
+                className="shrink-0 border-b border-border relative"
+                style={{ height: `${block.sourceBlocks.length * 52}px` }}
               >
                 <RealReflectionCell
                   dateIso={dateIso}
@@ -237,6 +237,7 @@ export function DayScheduleGrid({
                   blockEnd={block.end}
                   anchorDate={anchorDate}
                   completedInBlock={completedInBlock(block.start, block.end)}
+                  legacyBlocks={block.sourceBlocks}
                   className="absolute inset-0"
                 />
               </div>

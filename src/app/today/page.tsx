@@ -121,7 +121,7 @@ function TodayPage() {
   };
 
   return (
-    <div className="p-4 md:p-6 w-full max-w-4xl mx-auto">
+    <div className="p-3 md:p-4 w-full max-w-none">
       <PageHeader
         title="今日ビュー"
         description={format(todayDate, "yyyy年M月d日 (EEEE)", { locale: ja })}
