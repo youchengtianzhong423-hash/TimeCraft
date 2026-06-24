@@ -3,7 +3,6 @@ import { normalizeReflectionText } from "@/lib/reflectionCell";
 
 const MARKER_PREFIX = "timecraft-export";
 
-/** マーカーで囲んだブロックを差し替え／なければ末尾に追記 */
 export function upsertMarkedSection(
   existing: string,
   markerId: string,
@@ -31,7 +30,6 @@ export function upsertMarkedSection(
   return `${base}${block}`;
 }
 
-/** 日付の Real 振り返りメモを Markdown に */
 export function buildDailyReflectionSection(
   dateIso: string,
   realReflection: Record<string, string>,
@@ -51,26 +49,25 @@ export function buildDailyReflectionSection(
   if (rows.length === 0) return "";
 
   const lines = [
-    "## TimeCraft — Real 振り返り",
+    "## TimeCraft - Real振り返り",
     "",
-    ...rows.map((r) => `- **${r.start}–${r.end}** ${r.text}`),
+    ...rows.map((r) => `- **${r.start}-${r.end}** ${r.text}`),
   ];
   return lines.join("\n");
 }
 
-/** 週次3項目を Markdown に（日曜ファイル用） */
 export function buildWeeklyPlannerSection(planner: WeekPlannerNotes): string {
-  const blocks: string[] = ["## TimeCraft — 週間メモ", ""];
+  const blocks: string[] = ["## TimeCraft - 週間メモ", ""];
 
   const reflectionParts: string[] = [];
   if (planner.weeklyEvaluation.trim()) {
     reflectionParts.push(planner.weeklyEvaluation.trim());
   }
   if (planner.weeklyPriority.trim()) {
-    reflectionParts.push(`（旧 Weekly Priority）\n${planner.weeklyPriority.trim()}`);
+    reflectionParts.push(`### Weekly Priority\n${planner.weeklyPriority.trim()}`);
   }
   if (planner.microSuccess.trim()) {
-    reflectionParts.push(`（旧 Micro Success）\n${planner.microSuccess.trim()}`);
+    reflectionParts.push(`### Micro Success\n${planner.microSuccess.trim()}`);
   }
   if (reflectionParts.length > 0) {
     blocks.push("### 今週の振り返り", "", reflectionParts.join("\n\n"), "");
